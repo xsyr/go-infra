@@ -1,6 +1,7 @@
 package pool
 
 import (
+    "io"
     "sync"
 )
 
@@ -41,7 +42,7 @@ func (b *ByteSlice)Index(index int) []byte {
     return b.data[start:end]
 }
 
-func (b *ByteSlice)Copy(index int, buf []byte) []byte {
+func (b *ByteSlice)CopyTo(index int, buf []byte) []byte {
     start := b.elems[index].offset
     end := start + b.elems[index].len
     buf = append(buf, b.data[start:end]...)
@@ -58,16 +59,30 @@ func (b *ByteSlice)Release() {
     BS.pool.Put(b)
 }
 
-func (b *ByteSlice)Concat(bs ...[]byte) *ByteSlice{
-    offset := len(b.data)
+func (b *ByteSlice)AppendConcat(bs ...[]byte) *ByteSlice{
+    used := len(b.data)
 
     length := 0
     for _, s := range bs {
         length = length + len(s)
         b.data = append(b.data, s...)
     }
-    b.elems = append(b.elems, sliceHeader{ offset, length })
+    b.elems = append(b.elems, sliceHeader{ used, length })
     return b
+}
+
+func (b *ByteSlice)AppendFromReaderN(rd io.Reader, expect int) (n int, err error) {
+    used := len(b.data)
+    b.data = append(b.data, make([]byte, expect)...)
+
+    n, err = io.ReadFull(rd, b.data[used:])
+    if err != nil {
+        b.data = b.data[:used]
+        return n, err
+    }
+
+    b.elems = append(b.elems, sliceHeader{ used, expect })
+    return n, err
 }
 
 func (b *ByteSlice)Append(bs ...[]byte) *ByteSlice{
