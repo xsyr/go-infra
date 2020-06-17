@@ -1,4 +1,4 @@
-module github.com/xsyr/goinfra
+module github.com/xsyr/gokit
 
 go 1.14
 
