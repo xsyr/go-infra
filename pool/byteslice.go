@@ -11,7 +11,10 @@ type sliceHeader struct {
     offset, len int
 }
 
+// ByteSlice 用于存储一维数组，可以区分 空数组和nil
 type ByteSlice struct {
+    released bool
+
     data []byte
     elems []sliceHeader
 }
@@ -38,67 +41,109 @@ func (b *ByteSlice)Len() int {
 
 func (b *ByteSlice)Index(index int) []byte {
     start := b.elems[index].offset
+    if b.data[start] == '-' {
+        return nil
+    }
+
     end := start + b.elems[index].len
-    return b.data[start:end]
+    return b.data[start+1:end]
+}
+
+func (b *ByteSlice)IsNil(index int) bool {
+    return b.Index(index) == nil
 }
 
 func (b *ByteSlice)CopyTo(index int, buf []byte) []byte {
+    if b.IsNil(index) {
+        return nil
+    }
     start := b.elems[index].offset
     end := start + b.elems[index].len
-    buf = append(buf, b.data[start:end]...)
+    buf = append(buf, b.data[start+1:end]...)
     return buf
 }
 
 func (b *ByteSlice)Reset() {
-    b.data  = b.data[:0]
-    b.elems = b.elems[:0]
+    if len(b.data) > 0 {
+        b.data  = b.data[:0]
+    }
+
+    if len(b.elems) > 0 {
+        b.elems = b.elems[:0]
+    }
 }
 
-func (b *ByteSlice)Release() {
-    b.Reset()
-    BS.pool.Put(b)
-}
 
+// AppendConcat 将所有参数拼接成1个数据块
 func (b *ByteSlice)AppendConcat(bs ...[]byte) *ByteSlice{
     used := len(b.data)
+    b.data = append(b.data, '+')
 
+    allNil := true
     length := 0
-    for _, s := range bs {
-        length = length + len(s)
-        b.data = append(b.data, s...)
+    for _, bts := range bs {
+        if bts == nil {
+            continue
+        }
+        allNil = false
+        length = length + len(bts)
+        b.data = append(b.data, bts...)
     }
-    b.elems = append(b.elems, sliceHeader{ used, length })
+    if allNil {
+        b.data[used] = '-'
+    }
+    b.elems = append(b.elems, sliceHeader{ used, length+1 })
     return b
 }
 
 func (b *ByteSlice)AppendFromReaderN(rd io.Reader, expect int) (n int, err error) {
     used := len(b.data)
-    b.data = append(b.data, make([]byte, expect)...)
+    b.data = append(b.data, make([]byte, expect+1)...)
 
-    n, err = io.ReadFull(rd, b.data[used:])
+    n, err = io.ReadFull(rd, b.data[used+1:])
     if err != nil {
         b.data = b.data[:used]
         return n, err
     }
 
-    b.elems = append(b.elems, sliceHeader{ used, expect })
+    b.data[used] = '+'
+    b.elems = append(b.elems, sliceHeader{ used, expect+1 })
     return n, err
 }
 
-func (b *ByteSlice)Append(bs ...[]byte) *ByteSlice{
+func (b *ByteSlice)Append(bs ...[]byte) *ByteSlice {
     for _, bts := range bs {
-        length := len(b.data)
+        used := len(b.data)
+        if bts == nil {
+            b.data = append(b.data, '-')
+        } else {
+            b.data = append(b.data, '+')
+        }
         b.data  = append(b.data, bts...)
-        b.elems = append(b.elems, sliceHeader{ length, len(bts) })
+        b.elems = append(b.elems, sliceHeader{ used, len(bts)+1 })
     }
     return b
 }
 
-func (b *ByteSlice)ToByteSlice(bs [][]byte) [][]byte {
-    for _, h := range b.elems {
-        bs = append(bs, b.data[h.offset:h.offset+h.len])
+func (b *ByteSlice)ToBytes(bs [][]byte) [][]byte {
+    for i, h := range b.elems {
+        if b.IsNil(i) {
+            bs = append(bs, nil)
+        } else {
+            bs = append(bs, b.data[h.offset+1:h.offset+h.len])
+        }
     }
     return bs
+}
+
+func (b *ByteSlice)Release() {
+    if b.released {
+        panic("bug! release a released object")
+    }
+    b.released = true
+
+    b.Reset()
+    BS.pool.Put(b)
 }
 
 type ByteSlicePool struct {
@@ -106,15 +151,7 @@ type ByteSlicePool struct {
 }
 
 func (p *ByteSlicePool)Get() *ByteSlice {
-    return p.pool.Get().(*ByteSlice)
-}
-
-func init() {
-    BS = &ByteSlicePool {
-        pool : &sync.Pool{
-            New: func() interface{} {
-                return &ByteSlice{}
-            },
-        },
-    }
+    bs := p.pool.Get().(*ByteSlice)
+    bs.released = false
+    return bs
 }

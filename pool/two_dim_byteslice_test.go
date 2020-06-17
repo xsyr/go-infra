@@ -5,7 +5,7 @@ import (
     "github.com/stretchr/testify/assert"
 )
 
-func TestTwoByteSlice(t *testing.T) {
+func TestTwoDimByteSlice(t *testing.T) {
     var bs TwoDimByteSlice
 
     {
@@ -22,16 +22,16 @@ func TestTwoByteSlice(t *testing.T) {
 
         {
             // dim 1
-            assert.Equal(t, 1, bs.NewDim())
+            bs.NewDim()
 
             bs.Append([]byte("a"))
             bs.Append([]byte("b"))
             bs.Append([]byte("c"))
-            bs.Concat([]byte("d"), []byte("e"))
+            bs.AppendConcat([]byte("d"), []byte("e"))
 
             assert.Equal(t, 1  , bs.Dim())
             assert.Equal(t, 4  , bs.Len(0))
-            assert.Equal(t, 5  , len(bs.data))
+            assert.Equal(t, 9  , len(bs.data))
             assert.Equal(t, 512, cap(bs.data))
 
             assert.Equal(t, 4 , len(bs.flat))
@@ -40,14 +40,14 @@ func TestTwoByteSlice(t *testing.T) {
 
         {
             // dim 2
-            assert.Equal(t, 2, bs.NewDim())
+            bs.NewDim()
 
             bs.Append([]byte("j"))
             bs.Append([]byte("k"))
 
             assert.Equal(t, 2  , bs.Dim())
             assert.Equal(t, 2  , bs.Len(1))
-            assert.Equal(t, 7  , len(bs.data))
+            assert.Equal(t, 13 , len(bs.data))
             assert.Equal(t, 512, cap(bs.data))
 
             assert.Equal(t, 6 , len(bs.flat))
@@ -58,7 +58,7 @@ func TestTwoByteSlice(t *testing.T) {
             // growing
             bs.Grow(1024, 20, 20)
             assert.Equal(t, 2   , bs.Dim())
-            assert.Equal(t, 7   , len(bs.data))
+            assert.Equal(t, 13  , len(bs.data))
             assert.Equal(t, 1024, cap(bs.data))
 
             assert.Equal(t, 6 , len(bs.flat))
@@ -71,7 +71,7 @@ func TestTwoByteSlice(t *testing.T) {
         var bs2 [50][]byte
         {
             // dim 1
-            s := bs.ToByteSlice(0, bs2[:0])
+            s := bs.ToBytes(0, bs2[:0])
             assert.Equal(t, 4, len(s))
             assert.Equal(t, []byte("a") , s[0])
             assert.Equal(t, []byte("b") , s[1])
@@ -80,7 +80,7 @@ func TestTwoByteSlice(t *testing.T) {
         }
         {
             // dim 2
-            s := bs.ToByteSlice(1, bs2[:0])
+            s := bs.ToBytes(1, bs2[:0])
             assert.Equal(t, 2, len(s))
             assert.Equal(t, []byte("j") , s[0])
             assert.Equal(t, []byte("k") , s[1])
@@ -107,3 +107,28 @@ func TestTwoByteSlice(t *testing.T) {
     assert.Equal(t, 20 , cap(bs.dim))
 }
 
+func TestTwoDimByteSliceEmptyAndNil(t *testing.T) {
+    var bs TwoDimByteSlice
+
+    bs.NewDim()
+
+    bs.Append([]byte("0"))
+    bs.Append(nil)
+
+    bs.AppendConcat([]byte("2"), []byte("3"))
+    bs.AppendConcat(nil, nil)
+
+    assert.Equal(t, 4, bs.Len(0))
+
+    assert.Equal(t, []byte("0"), bs.Index(0, 0))
+    assert.Equal(t, false      , bs.IsNil(0, 0))
+
+    assert.Equal(t, []byte(nil), bs.Index(0, 1))
+    assert.Equal(t, true       , bs.IsNil(0, 1))
+
+    assert.Equal(t, []byte("23"), bs.Index(0, 2))
+    assert.Equal(t, false       , bs.IsNil(0, 2))
+
+    assert.Equal(t, []byte(nil), bs.Index(0, 3))
+    assert.Equal(t, true       , bs.IsNil(0, 3))
+}
