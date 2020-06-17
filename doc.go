@@ -1,1 +1,1 @@
-package goinfra
+package gokit
